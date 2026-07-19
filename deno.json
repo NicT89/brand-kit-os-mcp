@@ -1,0 +1,5 @@
+{
+  "tasks": {
+    "test": "deno test --allow-env=FIRECRAWL_API_KEY --no-check --node-modules-dir=auto supabase/functions/mcp-server/"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.nict89/brand-kit-os-mcp",
+  "description": "Structured, governed access to your brand voice, audience, personas, messaging, governance rules, and visual identity so AI output stays on-brand. Hosted remote server with OAuth; free plan available.",
+  "version": "1.5.0",
+  "repository": {
+    "url": "https://github.com/nict89/brand-kit-os-mcp",
+    "source": "github"
+  },
+  "websiteUrl": "https://www.brandkitos.com",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://www.brandkitos.com/mcp"
+    }
+  ]
+}
