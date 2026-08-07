@@ -9,7 +9,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [1.5.0]
 
-- Current published server release. Exposes 70 tools over the remote endpoint
+- Current published server release. Exposes 82 tools over the remote endpoint
   `https://www.brandkitos.com/mcp` (MCP protocol `2024-11-05`), with OAuth 2.0 and scoped API-key auth.
 
 > Earlier history lived in the monorepo prior to this repository being published. Future

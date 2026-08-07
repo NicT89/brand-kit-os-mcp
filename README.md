@@ -3,7 +3,7 @@
 **Give ChatGPT, Claude, and Cursor structured, governed access to your brand.**
 
 Brand Kit OS MCP is a hosted [Model Context Protocol](https://modelcontextprotocol.io) server
-that exposes **70 tools** for reading and writing your brand voice, audience, personas,
+that exposes **82 tools** for reading and writing your brand voice, audience, personas,
 messaging, governance rules, knowledge files, and visual identity — so AI output stays on-brand,
 every time, across every tool.
 

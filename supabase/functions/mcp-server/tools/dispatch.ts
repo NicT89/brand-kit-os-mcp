@@ -13,6 +13,8 @@ import { deleteHandlers } from "./delete-handlers.ts";
 import { briefingHandlers } from "./briefing-handlers.ts";
 import { historyHandlers } from "./history-handlers.ts";
 import { batchHandlers } from "./batch-handlers.ts";
+import { companyProfileHandlers } from "./company-profile-handlers.ts";
+import { webDiscoveryHandlers } from "./web-discovery-handlers.ts";
 
 const ALL_HANDLERS: Record<string, ToolHandler> = {
   ...sectionReadHandlers,
@@ -29,6 +31,8 @@ const ALL_HANDLERS: Record<string, ToolHandler> = {
   ...briefingHandlers,
   ...historyHandlers,
   ...batchHandlers,
+  ...companyProfileHandlers,
+  ...webDiscoveryHandlers,
 };
 
 export async function dispatchTool(

@@ -76,6 +76,8 @@ export const TOOLS_WITHOUT_BRAND_KIT_ID_ARG = new Set([
   "list_library_archetypes",
   "get_library_archetype",
   "list_governance_platforms",
+  "list_persona_field_options",
+
   "list_compliance_standards",
   "get_agent_briefing",
   "get_disclosure_diligence_questions",

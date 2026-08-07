@@ -42,10 +42,19 @@ export function buildBrandKitSectionToolMap(): BrandKitSectionToolMap {
       write: ["create_brand_kit_product", "update_brand_kit_product", "delete_brand_kit_product"],
     },
     audience: {
-      read: ["get_brand_kit_audience"],
+      read: ["get_brand_kit_audience", "list_persona_field_options"],
       preview: ["preview_generate_audience_persona"],
       write: ["create_audience_persona", "update_audience_persona", "delete_audience_persona"],
       generate: ["generate_audience_persona"],
+    },
+
+    customers: {
+      read: ["get_brand_kit_customers"],
+      write: ["create_customer_profile", "update_customer_profile", "delete_customer_profile"],
+    },
+    company_icps: {
+      read: ["get_brand_kit_company_icps"],
+      write: ["create_company_icp", "update_company_icp", "delete_company_icp"],
     },
     personas: {
       read: ["list_brand_kit_personas", "get_brand_kit_personas", "get_persona_system_prompt"],

@@ -8,6 +8,7 @@ import { checkAndDeductTokens } from "../../_shared/rate-limit.ts";
 import { dryRunPreview, filterFields, refundTokens, withTimeout } from "../helpers.ts";
 import { toJsonArray } from "../json-helpers.ts";
 import { verifyBrandKitAccess } from "../brand-access.ts";
+import { normalizePersonaMultiValues } from "../../_shared/persona-multi-value.ts";
 
 /**
  * Raised when the AI gateway call fails during persona generation. Carries the
@@ -72,17 +73,17 @@ export async function generateAudiencePersonaProposal(
       "persona_title": "string — job title or role label",
       "is_primary": false,
       "demographics": {
-        "age_range": "string e.g. 35-44",
+        "age_range": ["string e.g. 35-44"],
         "gender": "string",
         "location": "string e.g. Urban, US",
-        "income_level": "string",
-        "education": "string"
+        "income_level": ["string"],
+        "education": ["string"]
       },
       "professional_context": {
         "job_title": "string",
-        "industry": "string",
-        "company_size": "string",
-        "company_type": "string${persona_type === 'b2b' ? ' (important for B2B)' : ''}",
+        "industry": ["string"],
+        "company_size": ["string"],
+        "company_type": ["string${persona_type === 'b2b' ? ' (important for B2B)' : ''}"],
         "daily_responsibilities": "string"
       },
       "personal_background": {
@@ -138,8 +139,8 @@ export function buildAudiencePersonaPayload(
     persona_type: params.persona_type,
     is_primary: hasPrimaryAlready ? false : (generated.is_primary ?? false),
     source: 'ai_generated',
-    demographics: generated.demographics ?? {},
-    professional_context: generated.professional_context ?? {},
+    demographics: normalizePersonaMultiValues({ demographics: generated.demographics ?? {} }).demographics,
+    professional_context: normalizePersonaMultiValues({ professional_context: generated.professional_context ?? {} }).professional_context,
     personal_background: generated.personal_background ?? {},
     goals_motivations: generated.goals_motivations ?? [],
     frustrations_pain_points: generated.frustrations_pain_points ?? [],
@@ -162,7 +163,6 @@ export function buildAudiencePersonaPayload(
     influencers: [],
     objections_verbatim: [],
     trigger_events: [],
-    forbidden_moves: [],
     aspirational_identity: null,
     show_dont_tell_scene: null,
     visual_identifiers: {},
@@ -369,8 +369,8 @@ export const generateHandlers: Record<string, ToolHandler> = {
               // already has one. The user can flip is_primary later via the app
               // or update_audience_persona.
               is_primary: hasPrimaryAlready ? false : (generated.is_primary ?? false),
-              demographics: generated.demographics ?? {},
-              professional_context: generated.professional_context ?? {},
+              demographics: normalizePersonaMultiValues({ demographics: generated.demographics ?? {} }).demographics,
+              professional_context: normalizePersonaMultiValues({ professional_context: generated.professional_context ?? {} }).professional_context,
               personal_background: generated.personal_background ?? {},
               goals_motivations: generated.goals_motivations ?? [],
               frustrations_pain_points: generated.frustrations_pain_points ?? [],

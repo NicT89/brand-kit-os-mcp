@@ -5,6 +5,9 @@ import { getEnabledBrandKitWriteSections, hasAnyBrandKitSectionWrite } from "../
 import { buildBrandKitSectionToolMap } from "./section-map.ts";
 import { GOVERNANCE_PLATFORMS } from "../governance-platforms.ts";
 import { verifyBrandKitAccess } from "../brand-access.ts";
+import { effectiveVocabularies, loadVocabularySnapshot } from "../../_shared/persona-vocabulary.ts";
+import { loadLibraryIndustries } from "./persona-vocabulary-gate.ts";
+
 
 const PERSONA_FIELDS = [
   "role_definition", "personality_description", "function_description",
@@ -187,6 +190,35 @@ export const listHandlers: Record<string, ToolHandler> = {
       }],
     };
   },
+
+  list_persona_field_options: async (ctx) => {
+    const { supabaseAdmin } = ctx;
+    const [libraryIndustries, snapshot] = await Promise.all([
+      loadLibraryIndustries(supabaseAdmin),
+      loadVocabularySnapshot(supabaseAdmin),
+    ]);
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          instructions:
+            "Every controlled persona field below is a selection list, not free text. Send one canonical value per array entry — never combine several concepts into one string. Closed fields reject unknown values. Open fields (industry) accept new values, but check `options` and `library_values` first and reuse an existing entry when one fits; anything genuinely new is saved to the shared library so later calls can select it. Descriptive prose (fields of study, sector narratives, size adjectives) belongs in description or daily_responsibilities, not in these fields.",
+          fields: effectiveVocabularies(snapshot).map((v) => ({
+            field: `${v.parent}.${v.field}`,
+            label: v.label,
+            mode: v.mode,
+            value_type: v.multi ? "string[]" : "string",
+            options: v.options,
+            library_values: v.library === "industry_classifications" ? libraryIndustries : undefined,
+            guidance: v.guidance,
+          })),
+        }, null, 2),
+      }],
+    };
+  },
+
+
+
 
   /**
    * Lightweight persona index: returns one row per persona with field-fill

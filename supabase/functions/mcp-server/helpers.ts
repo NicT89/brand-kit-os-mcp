@@ -30,7 +30,12 @@ export function summarizeRawScrape<T extends { raw_scrape_data?: unknown } | nul
   return { ...(payload as Record<string, unknown>), raw_scrape_data: summary } as T;
 }
 
-export function dryRunPreview(table: string, current: unknown, proposed: Record<string, unknown>) {
+export function dryRunPreview(
+  table: string,
+  current: unknown,
+  proposed: Record<string, unknown>,
+  extra?: Record<string, unknown>,
+) {
   return {
     content: [
       {
@@ -43,6 +48,7 @@ export function dryRunPreview(table: string, current: unknown, proposed: Record<
             current_values: current ?? null,
             proposed_changes: proposed,
             fields_to_be_updated: Object.keys(proposed),
+            ...(extra ?? {}),
           },
           null,
           2,
@@ -51,6 +57,7 @@ export function dryRunPreview(table: string, current: unknown, proposed: Record<
     ],
   };
 }
+
 
 export function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {

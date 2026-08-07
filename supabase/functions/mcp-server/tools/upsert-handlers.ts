@@ -5,6 +5,7 @@ import { assertBrandKitSectionScope } from "../scope-gate.ts";
 import { callAIGateway, formatPersonality } from "../ai-gateway.ts";
 import { dryRunPreview, filterFields, refundTokens, withTimeout } from "../helpers.ts";
 import { toJsonArray, normalizeGovernanceForRead, wrapWritingConstraintsForWrite, normalizeNegativeDirectoryForWrite, wrapTerminologyForWrite } from "../json-helpers.ts";
+import { normalizeSlotShapeForWrite } from "../normalize-slot-shape.ts";
 import { findInvalidGovernancePlatforms, GOVERNANCE_PLATFORMS } from "../governance-platforms.ts";
 import { verifyBrandKitAccess } from "../brand-access.ts";
 import { captureRowSnapshot, recordAuditFields } from "../audit.ts";
@@ -157,8 +158,8 @@ export const upsertHandlers: Record<string, ToolHandler> = {
               }
             }
           }
-          if (verbal_style !== undefined) expressionData.verbal_style = verbal_style;
-          if (visual_style !== undefined) expressionData.visual_style = visual_style;
+          if (verbal_style !== undefined) expressionData.verbal_style = normalizeSlotShapeForWrite(verbal_style, "verbal_style");
+          if (visual_style !== undefined) expressionData.visual_style = normalizeSlotShapeForWrite(visual_style, "visual_style");
           if (preferred_terminology !== undefined) expressionData.preferred_terminology = wrapTerminologyForWrite(preferred_terminology);
 
 

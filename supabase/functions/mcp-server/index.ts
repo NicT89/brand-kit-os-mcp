@@ -353,8 +353,8 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({
         issuer: "https://www.brandkitos.com",
         authorization_endpoint: "https://www.brandkitos.com/oauth/authorize",
-        token_endpoint: `${supabaseUrl}/functions/v1/oauth-token`,
-        registration_endpoint: `${supabaseUrl}/functions/v1/oauth-register`,
+        token_endpoint: "https://www.brandkitos.com/oauth/token",
+        registration_endpoint: "https://www.brandkitos.com/oauth/register",
         response_types_supported: ["code"],
         grant_types_supported: ["authorization_code"],
         code_challenge_methods_supported: ["S256"],

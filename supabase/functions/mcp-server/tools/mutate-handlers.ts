@@ -5,6 +5,9 @@ import { assertBrandKitSectionScope } from "../scope-gate.ts";
 import { dryRunPreview, filterFields, refundTokens, withTimeout } from "../helpers.ts";
 import { verifyBrandKitAccess } from "../brand-access.ts";
 import { captureRowSnapshot, recordAuditFields } from "../audit.ts";
+import { normalizePersonaMultiValues } from "../../_shared/persona-multi-value.ts";
+import { applyPersonaVocabularyGate, buildVocabularyReport, persistNewIndustries } from "./persona-vocabulary-gate.ts";
+
 
 /**
  * Validate the shape of a `few_shot_examples` array if present. Returns null
@@ -195,13 +198,21 @@ export const mutateHandlers: Record<string, ToolHandler> = {
           const { data: existing } = await supabaseAdmin.from('brand_kit_target_audience').select('*').eq('id', persona_id).eq('brand_kit_id', brand_kit_id).maybeSingle();
           if (!existing) return toolError("Audience persona not found or does not belong to this brand kit", { code: "not_found", recovery: "Verify persona_id with get_brand_kit_audience for this brand kit." });
 
-          const allowed = ['persona_name','persona_title','persona_type','is_primary','description','demographics','professional_context','personal_background','goals_motivations','frustrations_pain_points','values_beliefs','fears','information_sources','preferred_channels','core_motivation','expertise_level','buying_behavior','content_that_resonates','representative_quote','barriers_to_sale','objections_verbatim','trigger_events','forbidden_moves','product_fit','current_perception','platform_behavior','tech_usage','influencers','aspirational_identity','show_dont_tell_scene','visual_identifiers','funnel_stage_triggers','channel_behavior_matrix','paid_tools','source'];
-          const updateData: Record<string, any> = {};
+          const allowed = ['persona_name','persona_title','persona_type','is_primary','description','demographics','professional_context','personal_background','goals_motivations','frustrations_pain_points','values_beliefs','fears','information_sources','preferred_channels','core_motivation','expertise_level','buying_behavior','content_that_resonates','representative_quote','barriers_to_sale','objections_verbatim','trigger_events','product_fit','current_perception','platform_behavior','tech_usage','influencers','aspirational_identity','show_dont_tell_scene','visual_identifiers','funnel_stage_triggers','channel_behavior_matrix','paid_tools','source'];
+          let updateData: Record<string, any> = {};
           for (const key of allowed) {
             if (fields[key] !== undefined) updateData[key] = fields[key];
           }
+          // Multi-value demographics / professional context are stored as string arrays.
+          updateData = normalizePersonaMultiValues(updateData);
 
           if (Object.keys(updateData).length === 0) return toolError("At least one field must be provided to update.", { code: "validation_error", recovery: "Include at least one optional argument describing the change you want to make." });
+
+          // Controlled-vocabulary gate: every selection must resolve to a real option.
+          const vocabGate = await applyPersonaVocabularyGate(updateData, supabaseAdmin);
+          if (vocabGate.error) return vocabGate.error;
+          updateData = vocabGate.result!.payload;
+          const pendingIndustries = vocabGate.result!.newLibraryValues.industry;
 
           if (dry_run) {
             await recordAuditFields(supabaseAdmin, requestId, {
@@ -212,11 +223,18 @@ export const mutateHandlers: Record<string, ToolHandler> = {
               after_state: { ...existing, ...updateData },
               was_dry_run: true,
             });
-            return dryRunPreview('brand_kit_target_audience', existing, updateData);
+            return dryRunPreview('brand_kit_target_audience', existing, updateData, {
+              normalizations: vocabGate.result!.normalizations,
+              new_library_values: { industry_classifications: pendingIndustries },
+            });
           }
 
+          const vocabReport = buildVocabularyReport(vocabGate.result!, 'mcp:update_audience_persona');
+          if (vocabReport) updateData.vocabulary_report = vocabReport;
           const { data: row, error } = await supabaseAdmin.from('brand_kit_target_audience').update(updateData).eq('id', persona_id).select('*').single();
+
           if (error) return toolError(`Database error: ${error.message}`, { code: "db_error", retryable: true });
+          const addedIndustries = await persistNewIndustries(supabaseAdmin, pendingIndustries, userId);
           await recordAuditFields(supabaseAdmin, requestId, {
             operation: 'update',
             resource_type: 'brand_kit_target_audience',
@@ -226,7 +244,8 @@ export const mutateHandlers: Record<string, ToolHandler> = {
             was_dry_run: false,
           });
           await log("info", "update_audience_persona done");
-          return { content: [{ type: "text", text: JSON.stringify({ success: true, persona: row }, null, 2) }] };
+          return { content: [{ type: "text", text: JSON.stringify({ success: true, persona: row, normalizations: vocabGate.result!.normalizations, industries_added_to_library: addedIndustries }, null, 2) }] };
+
   },
 
   update_ai_persona: async (ctx) => {
@@ -252,10 +271,12 @@ export const mutateHandlers: Record<string, ToolHandler> = {
           const fewShotErrUpdate = validateFewShotExamples(fields.few_shot_examples, "update_ai_persona");
           if (fewShotErrUpdate) return fewShotErrUpdate;
           const allowed = ['name','purpose_type','role_definition','function_description','tasks','behavioral_rules','tone_overrides','voice_profile','lexicon_syntax','negative_guardrails','target_audience_context','is_active','personality_description','is_default','safety_compliance','execution_protocol','reference_protocols','interaction_context','few_shot_examples'];
-          const updateData: Record<string, any> = {};
+          let updateData: Record<string, any> = {};
           for (const key of allowed) {
             if (fields[key] !== undefined) updateData[key] = fields[key];
           }
+          // Multi-value demographics / professional context are stored as string arrays.
+          updateData = normalizePersonaMultiValues(updateData);
 
           if (Object.keys(updateData).length === 0) return toolError("At least one field must be provided to update.", { code: "validation_error", recovery: "Include at least one optional argument describing the change you want to make." });
 
@@ -628,24 +649,40 @@ export const mutateHandlers: Record<string, ToolHandler> = {
           const confirmGate = await assertMcpWriteConfirmation(args, userId, supabaseAdmin);
           if (confirmGate) return confirmGate;
 
-          const allowed = ['persona_name','persona_title','persona_type','is_primary','description','demographics','professional_context','personal_background','goals_motivations','frustrations_pain_points','values_beliefs','fears','information_sources','preferred_channels','core_motivation','expertise_level','buying_behavior','content_that_resonates','representative_quote','barriers_to_sale','objections_verbatim','trigger_events','forbidden_moves','product_fit','current_perception','platform_behavior','tech_usage','influencers','aspirational_identity','show_dont_tell_scene','visual_identifiers','funnel_stage_triggers','channel_behavior_matrix','paid_tools','source'];
-          const insertPayload: Record<string, any> = { brand_kit_id };
+          const allowed = ['persona_name','persona_title','persona_type','is_primary','description','demographics','professional_context','personal_background','goals_motivations','frustrations_pain_points','values_beliefs','fears','information_sources','preferred_channels','core_motivation','expertise_level','buying_behavior','content_that_resonates','representative_quote','barriers_to_sale','objections_verbatim','trigger_events','product_fit','current_perception','platform_behavior','tech_usage','influencers','aspirational_identity','show_dont_tell_scene','visual_identifiers','funnel_stage_triggers','channel_behavior_matrix','paid_tools','source'];
+          let insertPayload: Record<string, any> = { brand_kit_id };
           for (const key of allowed) {
             if (fields[key] !== undefined) insertPayload[key] = fields[key];
           }
+          // Multi-value demographics / professional context are stored as string arrays.
+          insertPayload = normalizePersonaMultiValues(insertPayload);
           if (insertPayload.source === undefined) insertPayload.source = 'manual';
           if (insertPayload.is_primary === undefined) insertPayload.is_primary = false;
 
+          // Controlled-vocabulary gate: every selection must resolve to a real option.
+          const createVocabGate = await applyPersonaVocabularyGate(insertPayload, supabaseAdmin);
+          if (createVocabGate.error) return createVocabGate.error;
+          insertPayload = createVocabGate.result!.payload;
+          const createPendingIndustries = createVocabGate.result!.newLibraryValues.industry;
+
           if (dry_run) {
             await recordAuditFields(supabaseAdmin, requestId, { operation: 'create', resource_type: 'brand_kit_target_audience', resource_id: null, before_state: null, after_state: insertPayload, was_dry_run: true });
-            return dryRunPreview('brand_kit_target_audience (insert)', null, insertPayload);
+            return dryRunPreview('brand_kit_target_audience (insert)', null, insertPayload, {
+              normalizations: createVocabGate.result!.normalizations,
+              new_library_values: { industry_classifications: createPendingIndustries },
+            });
           }
 
+          const createVocabReport = buildVocabularyReport(createVocabGate.result!, 'mcp:create_audience_persona');
+          if (createVocabReport) insertPayload.vocabulary_report = createVocabReport;
           const { data: row, error } = await supabaseAdmin.from('brand_kit_target_audience').insert(insertPayload).select('*').single();
+
           if (error) return toolError(`Database error: ${error.message}`, { code: "db_error", retryable: true });
+          const createdIndustries = await persistNewIndustries(supabaseAdmin, createPendingIndustries, userId);
           await recordAuditFields(supabaseAdmin, requestId, { operation: 'create', resource_type: 'brand_kit_target_audience', resource_id: row?.id ?? null, before_state: null, after_state: row, was_dry_run: false });
           await log("info", "create_audience_persona done", { persona_id: row?.id });
-          return { content: [{ type: "text", text: JSON.stringify({ success: true, persona: row }, null, 2) }] };
+          return { content: [{ type: "text", text: JSON.stringify({ success: true, persona: row, normalizations: createVocabGate.result!.normalizations, industries_added_to_library: createdIndustries }, null, 2) }] };
+
   },
 
   create_brand_kit_persona: async (ctx) => {
@@ -666,10 +703,12 @@ export const mutateHandlers: Record<string, ToolHandler> = {
           const fewShotErrCreate = validateFewShotExamples(fields.few_shot_examples, "create_brand_kit_persona");
           if (fewShotErrCreate) return fewShotErrCreate;
           const allowed = ['name','purpose_type','role_definition','function_description','tasks','behavioral_rules','tone_overrides','voice_profile','lexicon_syntax','negative_guardrails','target_audience_context','is_active','personality_description','is_default','safety_compliance','execution_protocol','reference_protocols','interaction_context','few_shot_examples','source'];
-          const insertPayload: Record<string, any> = { brand_kit_id };
+          let insertPayload: Record<string, any> = { brand_kit_id };
           for (const key of allowed) {
             if (fields[key] !== undefined) insertPayload[key] = fields[key];
           }
+          // Multi-value demographics / professional context are stored as string arrays.
+          insertPayload = normalizePersonaMultiValues(insertPayload);
           if (insertPayload.source === undefined) insertPayload.source = 'manual';
           if (insertPayload.is_active === undefined) insertPayload.is_active = true;
           if (insertPayload.is_default === undefined) insertPayload.is_default = false;

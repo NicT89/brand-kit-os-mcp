@@ -43,7 +43,9 @@ export const knowledgeHandlers: Record<string, ToolHandler> = {
 
   list_knowledge_files: async (ctx) => {
     const { args, userId, supabaseAdmin, scopes } = ctx;
-          const { brand_kit_id, category } = args;
+          const { brand_kit_id, category, platform_context, tags } = args as {
+            brand_kit_id?: string; category?: string; platform_context?: string; tags?: string[];
+          };
           if (!brand_kit_id) return toolError("brand_kit_id is required", { code: "validation_error", recovery: "Pass the UUID returned by list_brand_kits as the brand_kit_id argument." });
           const hasAccess = await verifyBrandKitAccess(brand_kit_id, userId, supabaseAdmin);
           if (!hasAccess) return toolError("Access denied to this brand kit", { code: "access_denied", recovery: ACCESS_DENIED_RECOVERY });
@@ -53,9 +55,19 @@ export const knowledgeHandlers: Record<string, ToolHandler> = {
             .eq('brand_kit_id', brand_kit_id)
             .order('created_at', { ascending: false });
           if (category) query = query.eq('category', category);
+          if (platform_context) query = query.eq('platform_context', platform_context);
           const { data, error } = await query;
           if (error) return toolError(`Database error: ${error.message}`, { code: "db_error", retryable: true });
-          return { content: [{ type: "text", text: JSON.stringify(data || [], null, 2) }] };
+          // Post-filter by tags (jsonb ANY-match) since PostgREST jsonb array overlap is awkward
+          let filtered = data ?? [];
+          if (Array.isArray(tags) && tags.length) {
+            const wanted = tags.map((t) => String(t).toLowerCase());
+            filtered = filtered.filter((row: Record<string, unknown>) => {
+              const rowTags = Array.isArray(row.tags) ? (row.tags as unknown[]).map((t) => String(t).toLowerCase()) : [];
+              return wanted.some((w) => rowTags.includes(w));
+            });
+          }
+          return { content: [{ type: "text", text: JSON.stringify(filtered, null, 2) }] };
   },
 
   get_knowledge_file: async (ctx) => {

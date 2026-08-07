@@ -7,9 +7,47 @@ import {
   WRITE_GOVERNANCE_PREFIX,
   GENERATE_PREFIX,
 } from "./constants.ts";
+import {
+  AGE_RANGE_OPTIONS,
+  COMPANY_SIZE_OPTIONS,
+  COMPANY_TYPE_OPTIONS,
+  EDUCATION_OPTIONS,
+  GENDER_OPTIONS,
+  INCOME_LEVEL_OPTIONS,
+  INDUSTRY_OPTIONS,
+} from "../_shared/persona-vocabulary.ts";
 
+const SELECTION_RULE =
+  "Each array entry must be exactly ONE option — never a comma-joined blob such as 'Food & Beverage, Supplements'. Call list_persona_field_options first to see the live option lists.";
+
+/** Persona demographics with the same controlled vocabularies the UI dropdowns use. */
+const DEMOGRAPHICS_SCHEMA = {
+  type: "object",
+  description: `Demographics. ${SELECTION_RULE} Attainment/bracket fields are closed vocabularies — values outside the list are rejected with suggestions.`,
+  properties: {
+    age_range: { type: "array", items: { type: "string", enum: AGE_RANGE_OPTIONS }, description: "Age brackets the persona spans. A numeric range like '28-42' is expanded into the brackets it overlaps." },
+    gender: { type: "string", enum: GENDER_OPTIONS, description: "Single gender-skew value." },
+    location: { type: "string", description: "Free text, e.g. 'Urban, US'." },
+    income_level: { type: "array", items: { type: "string", enum: INCOME_LEVEL_OPTIONS }, description: "B2C only. Household-income brackets — not prose like 'middle to upper-middle'." },
+    education: { type: "array", items: { type: "string", enum: EDUCATION_OPTIONS }, description: "Attainment level ONLY. Field of study (e.g. 'Food Science') belongs in description or daily_responsibilities." },
+  },
+} as const;
+
+/** Persona professional context; `industry` is the one open (library-backed) vocabulary. */
+const PROFESSIONAL_CONTEXT_SCHEMA = {
+  type: "object",
+  description: `Professional context (B2B personas). ${SELECTION_RULE}`,
+  properties: {
+    job_title: { type: "string" },
+    industry: { type: "array", items: { type: "string" }, description: `Open vocabulary backed by the shared industry library. Built-ins: ${INDUSTRY_OPTIONS.join(", ")}. New industries ARE allowed and are saved to the library for reuse — check list_persona_field_options and reuse an existing value before inventing a near-duplicate. One industry per entry.` },
+    company_size: { type: "array", items: { type: "string", enum: COMPANY_SIZE_OPTIONS }, description: "Employee-count brackets. Prose like 'small to large CPG brands' is rejected; '50-500' is expanded into the brackets it overlaps." },
+    company_type: { type: "array", items: { type: "string", enum: COMPANY_TYPE_OPTIONS }, description: "Company maturity/structure ONLY. Sector descriptions like 'Dietary Supplements' belong in industry and are rejected here with a move_to hint." },
+    daily_responsibilities: { type: "string" },
+  },
+} as const;
 
 export const tools = [
+
   {
     name: "get_agent_briefing",
     title: "Get Agent Briefing (Session Bootstrap)",
@@ -137,19 +175,27 @@ export const tools = [
   {
     name: "get_brand_context_for_agent",
     title: "Get Brand Context for Agent",
-    description: "Assemble a compact, task-specific brand context string from a brand kit. Specify the task_type to receive only the sections relevant to that task, within a token budget. Use this to inject brand context into agent system prompts or sub-agent instructions. task_type options: content_creation, voice_check, campaign_planning, product_messaging, persona_embodiment, competitive_analysis.",
+    description: "Assemble a task-specific brand context bundle from a brand kit. Bundle task_types return a pre-assembled `bundle` object in ONE call: content_generation (writing — expression+governance+examples+audience+personality+knowledge), visual (colors+typography+logos+moods), audience (personas+target_audience+personality), competitive (products+competitors+positioning+core), governance (governance+compliance library+writing constraints), health (completeness snapshot of every section). Legacy task_types (content_creation, voice_check, campaign_planning, product_messaging, persona_embodiment, competitive_analysis) return a compact markdown context string only.",
     inputSchema: {
       type: "object",
       properties: {
         brand_kit_id: { type: "string", description: "The UUID of the brand kit" },
         task_type: {
           type: "string",
-          enum: ["content_creation", "voice_check", "campaign_planning", "product_messaging", "persona_embodiment", "competitive_analysis"],
-          description: "The type of task this context will support."
+          enum: ["content_generation", "visual", "audience", "competitive", "governance", "health", "content_creation", "voice_check", "campaign_planning", "product_messaging", "persona_embodiment", "competitive_analysis"],
+          description: "Task the context will support. Prefer a bundle task (content_generation, visual, audience, competitive, governance, health) — those return `bundle` with pre-assembled data."
+        },
+        platform: {
+          type: "string",
+          description: "Target platform for content_generation / governance (e.g. 'reddit', 'linkedin', 'blog', 'email', 'ads', 'instagram', 'twitter', 'youtube', 'ghost'). Filters governance rules, expression examples, verbal-style slots, and the knowledge-file index. Free-string — unknown platforms are accepted and matched case-insensitively."
         },
         persona_name: {
           type: "string",
           description: "For persona_embodiment tasks: the name of the AI persona to embody. Optional for other task types."
+        },
+        include_knowledge_index: {
+          type: "boolean",
+          description: "For bundle tasks. Default true. Set false to skip the knowledge-file metadata index."
         }
       },
       required: ["brand_kit_id", "task_type"]
@@ -321,7 +367,7 @@ export const tools = [
   {
     name: "list_knowledge_files",
     title: "List Knowledge Files",
-    description: "List knowledge files attached to a brand kit. Returns metadata only — title, description, relevance_hint, tags, and category. Use relevance_hint to decide whether fetching this file is necessary for your current task. Call get_knowledge_file with the file ID only when the file is relevant. Supports an optional category filter spanning both upload-wizard report types (general, writing_style_report, audience_report, performance_report, comment_analysis_report) and agent-facing tags (template, guideline, research, campaign).",
+    description: "List knowledge files attached to a brand kit. Returns metadata only — title, description, relevance_hint, tags, platform_context, and category. Use relevance_hint to decide whether fetching the body is necessary; call get_knowledge_file only when the file is relevant. For content tasks prefer calling get_brand_context_for_agent with task_type='content_generation' — it returns this same index pre-filtered to the target platform in one call. Filters: category (upload-wizard types and agent tags), platform_context (e.g. 'reddit', 'linkedin'), and tags (ANY-match, case-insensitive).",
     inputSchema: {
       type: "object",
       properties: {
@@ -330,6 +376,15 @@ export const tools = [
           type: "string",
           enum: ["general", "writing_style_report", "audience_report", "performance_report", "comment_analysis_report", "template", "guideline", "research", "campaign"],
           description: "Optional filter. Use 'template' to fetch fill-in-the-blank documents only."
+        },
+        platform_context: {
+          type: "string",
+          description: "Optional. Return only files whose platform_context matches (e.g. 'reddit', 'linkedin', 'blog')."
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional. Return files that carry ANY of these tags (case-insensitive)."
         }
       },
       required: ["brand_kit_id"]
@@ -427,8 +482,8 @@ export const tools = [
         tone_of_voice: { type: "object", description: "Object with description and attributes[{attribute,min_label,max_label,value}]." },
         tone_dimensions: { type: "object", description: "Object with formality, energy, warmth, confidence, complexity (0-100 each)." },
         voice_archetypes: { type: "object", description: "Object with primary/secondary {archetype_id?, name, description, characteristics[]} and antiArchetypes[]. PREFERRED: pass archetype_id (UUID from list_library_archetypes) — the server will hydrate name/description/characteristics from the library record and increment its usage_count. Freeform entries without archetype_id are still accepted for legacy/custom archetypes." },
-        verbal_style: { type: "object", description: "Verbal style — a single JSONB object keyed by slot (verbal_style_1 … verbal_style_5); each slot is a full template { name, use_when, sentence_structure, vocabulary_level, punctuation_style, grammar_preferences, formatting, digital_elements, content_patterns }. Only the slots you include are written." },
-        visual_style: { type: "object", description: "Visual style — a single JSONB object keyed by slot (visual_style_1 … visual_style_5); each slot is a full template { name, use_when, aesthetic, imagery_guidelines, color_usage, photography, illustration, iconography, layout, graphic_elements }. Only the slots you include are written." },
+        verbal_style: { type: "object", description: "Verbal style — a single JSONB object keyed by slot (slot_1 … slot_5); each slot is a full template { name, use_when, sentence_structure, vocabulary_level, punctuation_style, grammar_preferences, formatting, digital_elements, content_patterns }. Only the slots you include are written. Legacy verbal_style_N keys are auto-normalized to slot_N on write." },
+        visual_style: { type: "object", description: "Visual style — a single JSONB object keyed by slot (slot_1 … slot_5); each slot is a full template { name, use_when, aesthetic, imagery_guidelines, color_usage, photography, illustration, iconography, layout, graphic_elements, motion }. Only the slots you include are written. Legacy visual_style_N keys are auto-normalized to slot_N on write." },
         preferred_terminology: { type: "array", items: { type: "object", properties: { term: { type: "string" }, instead_of: { type: "array", items: { type: "string" } }, description: { type: "string" } }, required: ["term"] }, description: "Array of preferred-terminology entries: { term, instead_of: string[], description }. Legacy { prefer: [], avoid: [] } objects are auto-converted on write." },
 
       },
@@ -520,6 +575,14 @@ export const tools = [
     inputSchema: { type: "object", properties: {}, required: [] },
     annotations: readOnlyAnnotation,
   },
+  {
+    name: "list_persona_field_options",
+    title: "List Persona Field Options",
+    description: "Return the accepted selection values for every controlled target-audience persona field (age_range, gender, income_level, education, industry, company_type, company_size), including the current shared industry library. ALWAYS call this before create_audience_persona or update_audience_persona: closed fields reject values that are not on the list, and open fields (industry) should reuse an existing library value whenever one fits rather than inventing a near-duplicate. Each array entry must be exactly one option — never a comma-joined blob.",
+    inputSchema: { type: "object", properties: {}, required: [] },
+    annotations: readOnlyAnnotation,
+  },
+
   // ── Write tools — require brand_kit:write scope ──────────────────────────
   {
     name: "upsert_brand_kit_core",
@@ -554,8 +617,8 @@ export const tools = [
         tone_of_voice: { type: "object", description: "Object with description and attributes[{attribute,min_label,max_label,value 0-100}]." },
         tone_dimensions: { type: "object", description: "Object with formality, energy, warmth, confidence, complexity (0-100 each)." },
         voice_archetypes: { type: "object", description: "Object with primary/secondary {archetype_id?, name, description, characteristics[]} and antiArchetypes[]. PREFERRED: pass archetype_id (UUID from list_library_archetypes) — the server will hydrate name/description/characteristics from the library record and increment its usage_count. Freeform entries without archetype_id are still accepted for legacy/custom archetypes." },
-        verbal_style: { type: "object", description: "Verbal style — a single JSONB object keyed by slot (verbal_style_1 … verbal_style_5); each slot is a full template { name, use_when, sentence_structure, vocabulary_level, punctuation_style, grammar_preferences, formatting, digital_elements, content_patterns }. Only the slots you include are written." },
-        visual_style: { type: "object", description: "Visual style — a single JSONB object keyed by slot (visual_style_1 … visual_style_5); each slot is a full template { name, use_when, aesthetic, imagery_guidelines, color_usage, photography, illustration, iconography, layout, graphic_elements }. Only the slots you include are written." },
+        verbal_style: { type: "object", description: "Verbal style — a single JSONB object keyed by slot (slot_1 … slot_5); each slot is a full template { name, use_when, sentence_structure, vocabulary_level, punctuation_style, grammar_preferences, formatting, digital_elements, content_patterns }. Only the slots you include are written. Legacy verbal_style_N keys are auto-normalized to slot_N on write." },
+        visual_style: { type: "object", description: "Visual style — a single JSONB object keyed by slot (slot_1 … slot_5); each slot is a full template { name, use_when, aesthetic, imagery_guidelines, color_usage, photography, illustration, iconography, layout, graphic_elements, motion }. Only the slots you include are written. Legacy visual_style_N keys are auto-normalized to slot_N on write." },
         preferred_terminology: { type: "array", items: { type: "object", properties: { term: { type: "string" }, instead_of: { type: "array", items: { type: "string" } }, description: { type: "string" } }, required: ["term"] }, description: "Array of preferred-terminology entries: { term, instead_of: string[], description }. Legacy { prefer: [], avoid: [] } objects are auto-converted on write." },
         ...dryRunParam, ...confirmParam,
       },
@@ -734,8 +797,9 @@ export const tools = [
         persona_type: { type: "string", enum: ["b2b", "b2c"] },
         is_primary: { type: "boolean" },
         description: { type: "string", description: "Short persona summary shown on the persona card, up to 500 characters." },
-        demographics: { type: "object", description: "Demographics: age_range, gender, location, income_level, education." },
-        professional_context: { type: "object", description: "Professional context: job_title, industry, company_size, company_type, daily_responsibilities." },
+        demographics: DEMOGRAPHICS_SCHEMA,
+        professional_context: PROFESSIONAL_CONTEXT_SCHEMA,
+
         personal_background: { type: "object", description: "Personal background: lifestyle, family_status, interests, background_details." },
         goals_motivations: { type: "array", items: { type: "string" } },
         frustrations_pain_points: { type: "array", items: { type: "string" } },
@@ -751,7 +815,6 @@ export const tools = [
         barriers_to_sale: { type: "array", items: { type: "string" } },
         objections_verbatim: { type: "array", items: { type: "string" } },
         trigger_events: { type: "array", items: { type: "string" } },
-        forbidden_moves: { type: "array", items: { type: "string" } },
         product_fit: { type: "string" },
         current_perception: { type: "string" },
         platform_behavior: { type: "string" },
@@ -783,8 +846,9 @@ export const tools = [
         persona_type: { type: "string", enum: ["b2b", "b2c"] },
         is_primary: { type: "boolean", description: "Whether this is the primary persona for the brand kit. Default false." },
         description: { type: "string", description: "Short persona summary shown on the persona card, up to 500 characters." },
-        demographics: { type: "object", description: "Demographics: age_range, gender, location, income_level, education." },
-        professional_context: { type: "object", description: "Professional context: job_title, industry, company_size, company_type, daily_responsibilities." },
+        demographics: DEMOGRAPHICS_SCHEMA,
+        professional_context: PROFESSIONAL_CONTEXT_SCHEMA,
+
         personal_background: { type: "object", description: "Personal background: lifestyle, family_status, interests, background_details." },
         goals_motivations: { type: "array", items: { type: "string" } },
         frustrations_pain_points: { type: "array", items: { type: "string" } },
@@ -800,7 +864,6 @@ export const tools = [
         barriers_to_sale: { type: "array", items: { type: "string" } },
         objections_verbatim: { type: "array", items: { type: "string" } },
         trigger_events: { type: "array", items: { type: "string" } },
-        forbidden_moves: { type: "array", items: { type: "string" } },
         product_fit: { type: "string" },
         current_perception: { type: "string" },
         platform_behavior: { type: "string" },
@@ -1493,7 +1556,277 @@ export const tools = [
     },
     annotations: writeAnnotation,
   },
+  {
+    name: "get_brand_kit_customers",
+    title: "Get Current Customers",
+    description: "Returns the brand kit's current customer company profiles — real, existing customers described at the company level (category, business model, size, positioning, why they bought, evidence). For person-level personas use get_brand_kit_audience instead.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        ...fieldsParam,
+      },
+      required: ["brand_kit_id"],
+    },
+    annotations: readOnlyAnnotation,
+  },
+  {
+    name: "get_brand_kit_company_icps",
+    title: "Get Company ICPs",
+    description: "Returns the brand kit's Ideal Company Profiles — company archetypes the brand should sell to (defining traits, buying triggers, objections, decision makers, commercial upside, representative customers). These are archetypes, not named accounts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        ...fieldsParam,
+      },
+      required: ["brand_kit_id"],
+    },
+    annotations: readOnlyAnnotation,
+  },
+  {
+    name: "create_customer_profile",
+    title: "Create Current Customer",
+    description: WRITE_GOVERNANCE_PREFIX + "Create a current customer company profile. `name` is required; every other field is optional. Multi-value fields accept an array of strings; a single string is coerced to a one-item array. Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:audience') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        name: { type: "string", description: "The customer's company name." },
+        website_url: { type: "string" },
+        logo_url: { type: "string" },
+        one_line_description: { type: "string", description: "One sentence describing what this company does." },
+        description: { type: "string" },
+        category: { type: "string" },
+        sub_category: { type: "string" },
+        business_model: { type: "array", items: { type: "string" }, description: "e.g. DTC, Subscription, B2B / Wholesale, SaaS." },
+        company_size: { type: "array", items: { type: "string" }, description: "e.g. '11-50 employees'." },
+        revenue_range: { type: "string", description: "e.g. '$1M - $10M'." },
+        geography: { type: "array", items: { type: "string" } },
+        positioning: { type: "string" },
+        differentiators: { type: "array", items: { type: "string" } },
+        buying_triggers: { type: "array", items: { type: "string" } },
+        pain_points: { type: "array", items: { type: "string" } },
+        objections: { type: "array", items: { type: "string" } },
+        decision_makers: { type: "array", items: { type: "string" } },
+        fit_rationale: { type: "string", description: "Why this company is a good fit for the brand." },
+        evidence_sources: { type: "array", items: { type: "string" }, description: "Where this customer is evidenced (logo wall, case study, testimonial)." },
+        relationship_status: { type: "string", description: "Active customer, Pilot / trial, Churned, or Prospect." },
+        is_primary: { type: "boolean", description: "Whether this is a flagship customer. Default false." },
+        source: { type: "string", description: "'manual', 'extracted', or 'ai_generated'. Default 'manual'." },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["brand_kit_id", "name"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
+    name: "update_customer_profile",
+    title: "Update Current Customer",
+    description: WRITE_GOVERNANCE_PREFIX + "Update an existing current customer company profile. Requires the customer's UUID from get_brand_kit_customers. Only provided fields are updated. Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:audience') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        customer_id: { type: "string", description: "The UUID of the customer profile to update." },
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit (for access verification)." },
+        name: { type: "string" },
+        website_url: { type: "string" },
+        logo_url: { type: "string" },
+        one_line_description: { type: "string" },
+        description: { type: "string" },
+        category: { type: "string" },
+        sub_category: { type: "string" },
+        business_model: { type: "array", items: { type: "string" } },
+        company_size: { type: "array", items: { type: "string" } },
+        revenue_range: { type: "string" },
+        geography: { type: "array", items: { type: "string" } },
+        positioning: { type: "string" },
+        differentiators: { type: "array", items: { type: "string" } },
+        buying_triggers: { type: "array", items: { type: "string" } },
+        pain_points: { type: "array", items: { type: "string" } },
+        objections: { type: "array", items: { type: "string" } },
+        decision_makers: { type: "array", items: { type: "string" } },
+        fit_rationale: { type: "string" },
+        evidence_sources: { type: "array", items: { type: "string" } },
+        relationship_status: { type: "string" },
+        is_primary: { type: "boolean" },
+        source: { type: "string" },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["customer_id", "brand_kit_id"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
+    name: "delete_customer_profile",
+    title: "Delete Current Customer",
+    description: WRITE_GOVERNANCE_PREFIX + "Permanently delete a current customer company profile. Two-step: call with dry_run: true to preview, then again with confirm: true (omit dry_run) to delete. Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:audience') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        customer_id: { type: "string", description: "The UUID of the customer profile to delete." },
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit (for access verification)." },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["customer_id", "brand_kit_id"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
+    name: "create_company_icp",
+    title: "Create Company ICP",
+    description: WRITE_GOVERNANCE_PREFIX + "Create an Ideal Company Profile (a company archetype, not a named account). `name` is the archetype label, e.g. 'Founder-Led Purity Challenger'. Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:audience') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        name: { type: "string", description: "Archetype label for this ideal company profile." },
+        website_url: { type: "string" },
+        one_line_description: { type: "string" },
+        description: { type: "string" },
+        category: { type: "string" },
+        sub_category: { type: "string" },
+        business_model: { type: "array", items: { type: "string" } },
+        company_size: { type: "array", items: { type: "string" } },
+        revenue_range: { type: "string" },
+        geography: { type: "array", items: { type: "string" } },
+        positioning: { type: "string" },
+        differentiators: { type: "array", items: { type: "string" } },
+        buying_triggers: { type: "array", items: { type: "string" } },
+        pain_points: { type: "array", items: { type: "string" } },
+        objections: { type: "array", items: { type: "string" } },
+        decision_makers: { type: "array", items: { type: "string" } },
+        commercial_upside: { type: "string", description: "The commercial value of winning this archetype." },
+        fit_rationale: { type: "string" },
+        evidence_sources: { type: "array", items: { type: "string" } },
+        representative_customers: { type: "array", items: { type: "string" }, description: "Existing customers that exemplify this archetype." },
+        is_primary: { type: "boolean" },
+        source: { type: "string", description: "'manual', 'extracted', or 'ai_generated'. Default 'manual'." },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["brand_kit_id", "name"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
+    name: "update_company_icp",
+    title: "Update Company ICP",
+    description: WRITE_GOVERNANCE_PREFIX + "Update an existing Ideal Company Profile. Requires the ICP's UUID from get_brand_kit_company_icps. Only provided fields are updated. Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:audience') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        icp_id: { type: "string", description: "The UUID of the ideal company profile to update." },
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit (for access verification)." },
+        name: { type: "string" },
+        website_url: { type: "string" },
+        one_line_description: { type: "string" },
+        description: { type: "string" },
+        category: { type: "string" },
+        sub_category: { type: "string" },
+        business_model: { type: "array", items: { type: "string" } },
+        company_size: { type: "array", items: { type: "string" } },
+        revenue_range: { type: "string" },
+        geography: { type: "array", items: { type: "string" } },
+        positioning: { type: "string" },
+        differentiators: { type: "array", items: { type: "string" } },
+        buying_triggers: { type: "array", items: { type: "string" } },
+        pain_points: { type: "array", items: { type: "string" } },
+        objections: { type: "array", items: { type: "string" } },
+        decision_makers: { type: "array", items: { type: "string" } },
+        commercial_upside: { type: "string" },
+        fit_rationale: { type: "string" },
+        evidence_sources: { type: "array", items: { type: "string" } },
+        representative_customers: { type: "array", items: { type: "string" } },
+        is_primary: { type: "boolean" },
+        source: { type: "string" },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["icp_id", "brand_kit_id"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
+    name: "delete_company_icp",
+    title: "Delete Company ICP",
+    description: WRITE_GOVERNANCE_PREFIX + "Permanently delete an Ideal Company Profile. Two-step: call with dry_run: true to preview, then again with confirm: true (omit dry_run) to delete. Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:audience') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        icp_id: { type: "string", description: "The UUID of the ideal company profile to delete." },
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit (for access verification)." },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["icp_id", "brand_kit_id"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
+    name: "discover_brand_kit_competitors",
+    title: "Discover Competitors",
+    description: "Find up to 10 competitor candidates for a brand kit. Read-only: nothing is written and no credits are spent. Each candidate returns name, url, logo_url and a short reason. Provider 'ai' works on every plan; provider 'semrush' requires a paid plan and returns organic-search competitors. Present the candidate list to the user and let them choose before calling accept_brand_kit_competitors — adding a competitor costs 1 credit each.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        provider: { type: "string", enum: ["ai", "semrush"], description: "Discovery source. Defaults to 'ai'." },
+        limit: { type: "number", description: "Maximum candidates to return (1-10). Defaults to 10." },
+      },
+      required: ["brand_kit_id"],
+    },
+    annotations: readOnlyAnnotation,
+  },
+  {
+    name: "accept_brand_kit_competitors",
+    title: "Accept Competitors",
+    description: WRITE_GOVERNANCE_PREFIX + "Add competitors returned by discover_brand_kit_competitors to the brand kit and enrich each one from its live site. Charges 1 credit per competitor, maximum 10 per call. Two-step: call with dry_run: true to preview the exact competitors and credit cost, then again with confirm: true (omit dry_run) after the user approves. Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:competitors') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        competitors: {
+          type: "array",
+          description: "Competitors to add, at most 10. Use the candidates returned by discover_brand_kit_competitors unchanged.",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Competitor name." },
+              url: { type: "string", description: "Competitor website URL." },
+              logo_url: { type: "string", description: "Competitor logo image URL, when known." },
+            },
+            required: ["url"],
+          },
+        },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["brand_kit_id", "competitors"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
+    name: "scrape_brand_kit_reviews",
+    title: "Scrape Review Sites",
+    description: WRITE_GOVERNANCE_PREFIX + "Import public reviews for the brand (or one of its competitors) from G2, TrustRadius, Capterra, Gartner and Trustpilot in a single run, saving one review-site card per platform found. Charges 1 credit per 10 reviews saved, rounded up, and imports at most 100 reviews. Two-step: call with dry_run: true to show the query, platforms and maximum credit cost, then again with confirm: true (omit dry_run) after the user approves. Competitor runs ignore sort/star filters and always import the first 100 most recent reviews. Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:competitors') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        query: { type: "string", description: "Company name, domain, or a direct review-page URL. Defaults to the brand kit website." },
+        platforms: {
+          type: "array",
+          items: { type: "string", enum: ["g2", "trustradius", "capterra", "gartner", "trustpilot"] },
+          description: "Leave empty for all platforms; otherwise provide at least two.",
+        },
+        sort: { type: "string", enum: ["most_recent", "most_helpful", "highest_rated", "lowest_rated"], description: "Review sort order. Defaults to 'most_recent'." },
+        star_ratings: { type: "array", items: { type: "string", enum: ["1", "2", "3", "4", "5"] }, description: "Leave empty for all ratings." },
+        competitor_id: { type: "string", description: "Import reviews for this competitor instead of the brand. Sort and star filters are ignored." },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["brand_kit_id"],
+    },
+    annotations: writeAnnotation,
+  },
 ];
+
 
 export const resourceTemplates = [
   {
