@@ -1,0 +1,22 @@
+name: MCP CI
+
+# Runs the MCP server's Deno contract tests — the same command (and flags) the upstream
+# monorepo runs in CI, so a green badge here means the published tool contract is intact.
+# The tests use fake Supabase clients: no backend, no secrets, no network beyond deps.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Contract tests
+        run: deno task test
