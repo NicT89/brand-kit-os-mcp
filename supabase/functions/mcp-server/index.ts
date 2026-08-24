@@ -209,6 +209,21 @@ async function dispatchMcpMethod(input: DispatchInput): Promise<DispatchOutput> 
         mimeType: "application/json"
       }));
 
+      resources.push(
+        {
+          uri: "library://fonts",
+          name: "Font Library",
+          description: "Approved fonts available for typography fields. Read this before writing brand kit typography — unrecognized font names are rejected.",
+          mimeType: "application/json",
+        },
+        {
+          uri: "library://vocabulary",
+          name: "Persona Vocabulary",
+          description: "Allowed values per persona and audience field, grouped by field key. Closed-list fields reject values outside this set.",
+          mimeType: "application/json",
+        },
+      );
+
       result = { resources };
       break;
     }

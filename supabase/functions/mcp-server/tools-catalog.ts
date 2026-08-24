@@ -1761,6 +1761,22 @@ export const tools = [
     annotations: writeAnnotation,
   },
   {
+    name: "create_brand_kit_from_url",
+    title: "Create Brand Kit From URL",
+    description: WRITE_GOVERNANCE_PREFIX + "Create a brand new brand kit from a website URL — the same flow as 'Extract from URL' in the app. Scrapes the site for name, description, summary, colors, typography, logo and social profiles, then enriches the kit in the background with competitors, target audience personas, company ICPs and current customers. Charges 1 credit for the extraction plus 1 credit per competitor and per AI enrichment step; steps are skipped automatically when the account runs out of credits. Two-step: call with dry_run: true to show what will be created, then again with confirm: true (omit dry_run). Requires an API key with the 'brand_kit:write' scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "Public website URL of the brand, e.g. 'https://www.example.com'." },
+        name: { type: "string", description: "Optional brand kit name. Defaults to the brand name found on the site." },
+        enrich: { type: "boolean", description: "Run the background enrichment chain (competitors, personas, company ICPs, current customers). Defaults to true." },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["url"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
     name: "discover_brand_kit_competitors",
     title: "Discover Competitors",
     description: "Find up to 10 competitor candidates for a brand kit. Read-only: nothing is written and no credits are spent. Each candidate returns name, url, logo_url and a short reason. Provider 'ai' works on every plan; provider 'semrush' requires a paid plan and returns organic-search competitors. Present the candidate list to the user and let them choose before calling accept_brand_kit_competitors — adding a competitor costs 1 credit each.",
@@ -1824,6 +1840,54 @@ export const tools = [
       required: ["brand_kit_id"],
     },
     annotations: writeAnnotation,
+  },
+  {
+    name: "scrape_brand_kit_social_profile",
+    title: "Scrape Social Profile",
+    description: WRITE_GOVERNANCE_PREFIX + "Scrape a public social profile (Instagram, LinkedIn, Facebook, TikTok, YouTube or X) for the brand kit. scrape_type 'profile' returns the normalized profile immediately and charges 1 credit. scrape_type 'posts' starts a background run, charges 1 credit per 10 posts collected (rounded up) and returns a scrape_run_id — poll get_brand_kit_social_scrape_run until status is 'succeeded', then read results with list_brand_kit_social_posts. Two-step: call with dry_run: true to show the platform, target and credit estimate, then again with confirm: true (omit dry_run) after the user approves. Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:social_profiles') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        platform: { type: "string", enum: ["instagram", "linkedin", "facebook", "tiktok", "youtube", "twitter"], description: "Social platform to scrape." },
+        profile_url: { type: "string", description: "Public profile URL to scrape." },
+        profile_type: { type: "string", enum: ["company", "personal"], description: "Whether this is a company or personal profile. Defaults to 'company'." },
+        scrape_type: { type: "string", enum: ["profile", "posts"], description: "'profile' for profile metadata (synchronous), 'posts' for recent posts (background run). Defaults to 'profile'." },
+        results_limit: { type: "number", description: "Maximum posts to collect when scrape_type is 'posts' (1-200). Defaults to 50." },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["brand_kit_id", "platform", "profile_url"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
+    name: "get_brand_kit_social_scrape_run",
+    title: "Get Social Scrape Run",
+    description: "Check the status of background social scrape runs for a brand kit. Returns platform, scrape kind, status ('pending', 'running', 'succeeded', 'failed', 'timed_out'), items collected, credits spent and any error message. Omit scrape_run_id to list the 10 most recent runs. Read-only: no credits are spent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        scrape_run_id: { type: "string", description: "The UUID returned by scrape_brand_kit_social_profile. Omit to list recent runs." },
+      },
+      required: ["brand_kit_id"],
+    },
+    annotations: readOnlyAnnotation,
+  },
+  {
+    name: "list_brand_kit_social_posts",
+    title: "List Social Posts",
+    description: "List social posts collected for a brand kit, newest first. Returns caption, post type, hashtags, mentions, engagement metrics and the post URL for each. Use this after a 'posts' scrape run succeeds to analyze content themes and voice. Read-only: no credits are spent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        platform: { type: "string", enum: ["instagram", "linkedin", "facebook", "tiktok", "youtube", "twitter"], description: "Filter to one platform. Omit for all platforms." },
+        limit: { type: "number", description: "Maximum posts to return (1-100). Defaults to 25." },
+      },
+      required: ["brand_kit_id"],
+    },
+    annotations: readOnlyAnnotation,
   },
 ];
 

@@ -9,6 +9,7 @@ import { dryRunPreview, filterFields, refundTokens, withTimeout } from "../helpe
 import { toJsonArray } from "../json-helpers.ts";
 import { verifyBrandKitAccess } from "../brand-access.ts";
 import { normalizePersonaMultiValues } from "../../_shared/persona-multi-value.ts";
+import { normalizeAiPersonaFields } from "../../_shared/ai-persona-fields.ts";
 
 /**
  * Raised when the AI gateway call fails during persona generation. Carries the
@@ -438,6 +439,8 @@ export const generateHandlers: Record<string, ToolHandler> = {
 
           await log("info", "AI gateway returned — writing persona to DB");
           await progress(80, 100, "Writing persona");
+          // Map any legacy key names the model may still emit onto real columns.
+          const personaFields = normalizeAiPersonaFields(generated ?? {}) as Record<string, any>;
           const { data: row, error: insertError } = await supabaseAdmin
             .from('brand_kit_personas')
             .insert({
@@ -449,16 +452,17 @@ export const generateHandlers: Record<string, ToolHandler> = {
               is_default: false,
               target_audience_context: target_audience_context ?? null,
               interaction_context: Array.isArray(interaction_contexts) ? interaction_contexts : [],
-              role_definition: generated.role_definition ?? null,
-              function_description: generated.function_description ?? null,
-              tasks: generated.tasks ?? [],
-              behavioral_rules: generated.behavioral_rules ?? [],
-              tone_overrides: generated.tone_overrides ?? {},
-              voice_profile: generated.voice_profile ?? {},
-              lexicon_syntax: generated.lexicon_syntax ?? {},
-              negative_guardrails: generated.negative_guardrails ?? [],
-              execution_protocol: generated.execution_protocol ?? [],
+              role_definition: personaFields.role_definition ?? null,
+              function_description: personaFields.function_description ?? null,
+              tasks: personaFields.tasks ?? [],
+              behavioral_rules: personaFields.behavioral_rules ?? [],
+              tone_overrides: personaFields.tone_overrides ?? {},
+              voice_profile: personaFields.voice_profile ?? {},
+              lexicon_syntax: personaFields.lexicon_syntax ?? {},
+              negative_guardrails: personaFields.negative_guardrails ?? [],
+              execution_protocol: personaFields.execution_protocol ?? [],
             })
+
             .select('*')
             .single();
     

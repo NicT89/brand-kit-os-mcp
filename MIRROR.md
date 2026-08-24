@@ -8,8 +8,9 @@ This repository is a **one-way, generated mirror** of the Brand Kit OS MCP serve
   set of shared modules it imports (`supabase/functions/_shared/*.ts`), plus public docs, a
   registry manifest (`server.json`), and CI that type-checks and runs the contract tests.
 - **How it updates:** on every server release, an automated job in the monorepo re-assembles this
-  tree (stamping the current version, tool count, and endpoints) and publishes it here. A PII/secret
-  gate runs before every publish, so credentials and customer identifiers never reach this repo.
+  tree (stamping the current version, tool count, and endpoints) and opens a pull request here, which
+  a maintainer reviews and merges — this repo is never pushed to directly. A PII/secret gate runs
+  before every sync, so credentials and customer identifiers never reach this repo.
 
 ## Contributing
 
