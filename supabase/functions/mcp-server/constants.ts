@@ -81,6 +81,9 @@ export const TOOLS_WITHOUT_BRAND_KIT_ID_ARG = new Set([
   "list_compliance_standards",
   "get_agent_briefing",
   "get_disclosure_diligence_questions",
+
+  // Creates the brand kit, so it takes a url instead of a brand_kit_id.
+  "create_brand_kit_from_url",
 ]);
 
 

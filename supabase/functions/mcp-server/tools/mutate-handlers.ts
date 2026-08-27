@@ -6,6 +6,7 @@ import { dryRunPreview, filterFields, refundTokens, withTimeout } from "../helpe
 import { verifyBrandKitAccess } from "../brand-access.ts";
 import { captureRowSnapshot, recordAuditFields } from "../audit.ts";
 import { normalizePersonaMultiValues } from "../../_shared/persona-multi-value.ts";
+import { AI_PERSONA_WRITABLE_COLUMNS, normalizeAiPersonaFields } from "../../_shared/ai-persona-fields.ts";
 import { applyPersonaVocabularyGate, buildVocabularyReport, persistNewIndustries } from "./persona-vocabulary-gate.ts";
 
 
@@ -270,11 +271,13 @@ export const mutateHandlers: Record<string, ToolHandler> = {
 
           const fewShotErrUpdate = validateFewShotExamples(fields.few_shot_examples, "update_ai_persona");
           if (fewShotErrUpdate) return fewShotErrUpdate;
-          const allowed = ['name','purpose_type','role_definition','function_description','tasks','behavioral_rules','tone_overrides','voice_profile','lexicon_syntax','negative_guardrails','target_audience_context','is_active','personality_description','is_default','safety_compliance','execution_protocol','reference_protocols','interaction_context','few_shot_examples'];
+          const updatePersonaFields = normalizeAiPersonaFields(fields);
+          const allowed = AI_PERSONA_WRITABLE_COLUMNS.filter((c) => c !== 'source');
           let updateData: Record<string, any> = {};
           for (const key of allowed) {
-            if (fields[key] !== undefined) updateData[key] = fields[key];
+            if (updatePersonaFields[key] !== undefined) updateData[key] = updatePersonaFields[key];
           }
+
           // Multi-value demographics / professional context are stored as string arrays.
           updateData = normalizePersonaMultiValues(updateData);
 
@@ -702,13 +705,15 @@ export const mutateHandlers: Record<string, ToolHandler> = {
 
           const fewShotErrCreate = validateFewShotExamples(fields.few_shot_examples, "create_brand_kit_persona");
           if (fewShotErrCreate) return fewShotErrCreate;
-          const allowed = ['name','purpose_type','role_definition','function_description','tasks','behavioral_rules','tone_overrides','voice_profile','lexicon_syntax','negative_guardrails','target_audience_context','is_active','personality_description','is_default','safety_compliance','execution_protocol','reference_protocols','interaction_context','few_shot_examples','source'];
+          const createPersonaFields = normalizeAiPersonaFields(fields);
+          const allowed = [...AI_PERSONA_WRITABLE_COLUMNS];
           let insertPayload: Record<string, any> = { brand_kit_id };
           for (const key of allowed) {
-            if (fields[key] !== undefined) insertPayload[key] = fields[key];
+            if (createPersonaFields[key] !== undefined) insertPayload[key] = createPersonaFields[key];
           }
           // Multi-value demographics / professional context are stored as string arrays.
           insertPayload = normalizePersonaMultiValues(insertPayload);
+
           if (insertPayload.source === undefined) insertPayload.source = 'manual';
           if (insertPayload.is_active === undefined) insertPayload.is_active = true;
           if (insertPayload.is_default === undefined) insertPayload.is_default = false;

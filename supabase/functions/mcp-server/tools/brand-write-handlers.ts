@@ -6,6 +6,13 @@ import { buildBrandKitComputedFields, scrapeVisualIdentity, type VisualIdentityR
 import { dryRunPreview, filterFields, refundTokens, withTimeout } from "../helpers.ts";
 import { verifyBrandKitAccess } from "../brand-access.ts";
 import { recordAuditFields } from "../audit.ts";
+import {
+  FONT_FIELD_KEYS,
+  gateFontFields,
+  loadFontLibrary,
+  normalizeFontsList as normalizeFontsListForLibrary,
+} from "../../_shared/font-vocabulary.ts";
+
 
 export const brandWriteHandlers: Record<string, ToolHandler> = {
   update_brand_kit: async (ctx) => {
@@ -81,6 +88,46 @@ export const brandWriteHandlers: Record<string, ToolHandler> = {
           }
           if (Object.keys(updateData).length === 0) return toolError("At least one field must be provided.", { code: "validation_error" });
 
+          // Font vocabulary gate: the three font slots must resolve to families in
+          // the approved font_library, exactly like the UI picker enforces.
+          // Bundler noise (`__DM_Sans_0d7163`) and CSS stacks (`ui-sans-serif`)
+          // are auto-corrected; anything unrecognized is rejected with guidance.
+          const fontKeysPresent = FONT_FIELD_KEYS.filter((key) => updateData[key] !== undefined);
+          const fontCorrections: Array<{ field: string; from: string; to: string; reason: string }> = [];
+          if (fontKeysPresent.length > 0) {
+            let library;
+            try {
+              library = await loadFontLibrary(supabaseAdmin);
+            } catch (libraryError) {
+              return toolError(
+                `Could not load the font library: ${libraryError instanceof Error ? libraryError.message : "unknown error"}`,
+                { code: "db_error", retryable: true },
+              );
+            }
+            const gate = gateFontFields(updateData, library, true);
+            if (gate.rejected.length > 0) {
+              const detail = gate.rejected
+                .map((r) => `${r.field}: "${r.value}" — ${r.reason}`)
+                .join("; ");
+              return toolError(`Unapproved font value(s). ${detail}`, {
+                code: "validation_error",
+                recovery:
+                  "Use a family from the approved font library (get_brand_kit_visual_identity shows the current fonts). Add a genuinely new family through the app's \"Add custom font\" flow before writing it.",
+              });
+            }
+            for (const key of fontKeysPresent) {
+              if (gate.values[key] !== undefined) updateData[key] = gate.values[key];
+            }
+            fontCorrections.push(...gate.corrections);
+            if (updateData.fonts_list !== undefined) {
+              updateData.fonts_list = normalizeFontsListForLibrary(updateData.fonts_list, library);
+            }
+            if (fontCorrections.length > 0) {
+              await log("info", "Normalized font values against the font library", { corrections: fontCorrections });
+            }
+          }
+
+
           // Compute tailwind_config and css_variables_export from merged state.
           // `current` doubles as the audit before_state — no extra round-trip.
           const { data: current } = await supabaseAdmin.from('brand_kits').select(allowed.join(', ')).eq('id', brand_kit_id).maybeSingle();
@@ -113,6 +160,8 @@ export const brandWriteHandlers: Record<string, ToolHandler> = {
             was_dry_run: false,
           });
           await log("info", "update_brand_kit_visuals done");
-          return { content: [{ type: "text", text: JSON.stringify({ success: true, data: row }, null, 2) }] };
+          const visualsPayload: Record<string, unknown> = { success: true, data: row };
+          if (fontCorrections.length > 0) visualsPayload.font_corrections = fontCorrections;
+          return { content: [{ type: "text", text: JSON.stringify(visualsPayload, null, 2) }] };
   },
 };

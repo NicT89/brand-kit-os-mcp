@@ -94,8 +94,10 @@ export async function assertBrandKitMcpWriteAllowed(
  * was not supplied. Dry-run previews are always allowed.
  *
  * Behavior summary:
- *   - require_mcp_write_confirmation = false → no-op (current behavior).
- *   - require_mcp_write_confirmation = true:
+ *   - require_mcp_write_confirmation = false → no-op (opt-out; the user turned
+ *     the toggle off in Settings → Preferences → Agent writes).
+ *   - require_mcp_write_confirmation = true → the default since the column
+ *     default was flipped and existing rows were backfilled:
  *       • args.dry_run === true            → allow (preview)
  *       • args.confirm === true            → allow (commit)
  *       • otherwise                        → confirmation_required error
@@ -121,7 +123,7 @@ export async function assertMcpWriteConfirmation(
     {
       code: "confirmation_required",
       recovery:
-        "Re-call this tool with `confirm: true` (and without `dry_run`) after reviewing the dry_run preview. You can disable this requirement in Settings → Admin → 'Require confirmation on MCP writes'.",
+        "Re-call this tool with `confirm: true` (and without `dry_run`) after reviewing the dry_run preview. You can disable this requirement in Settings → Preferences → Agent writes → 'Require confirmation on MCP writes'.",
     },
   );
 }
