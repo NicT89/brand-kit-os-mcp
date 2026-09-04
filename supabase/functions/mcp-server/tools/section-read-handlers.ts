@@ -2,8 +2,10 @@ import { formatPersonality } from "../ai-gateway.ts";
 import { filterFields } from "../helpers.ts";
 import { toolError } from "../tool-errors.ts";
 import { normalizeGovernanceForRead } from "../json-helpers.ts";
+import { describeToneDimensions } from "../../_shared/tone-dimensions.ts";
 import { jsonContent, requireBrandKitReadAccess } from "./access-helpers.ts";
 import type { ToolHandler } from "./types.ts";
+
 
 /**
  * Slot-key normalization for brand_kit_expression reads (Gap #7).
@@ -34,9 +36,20 @@ function normalizeExpressionSlotsForRead<T extends Record<string, unknown> | nul
     }
     out[field] = obj;
   }
-  out._slot_keys_deprecated = "slot_1..slot_5 aliases are deprecated; use verbal_style_1..5 and visual_style_1..5 going forward.";
   return out as T;
 }
+
+/**
+ * Replace bare 0-100 integers with their labelled scale so the value carries
+ * direction. "energy: 40" tells a model nothing; the expanded shape does.
+ */
+function withDescribedToneDimensions<T extends Record<string, unknown> | null | undefined>(row: T): T {
+  if (!row || typeof row !== "object") return row;
+  const raw = (row as Record<string, unknown>).tone_dimensions;
+  if (!raw || typeof raw !== "object") return row;
+  return { ...(row as Record<string, unknown>), tone_dimensions: describeToneDimensions(raw as Record<string, unknown>) } as T;
+}
+
 
 
 export const sectionReadHandlers: Record<string, ToolHandler> = {
@@ -77,7 +90,7 @@ export const sectionReadHandlers: Record<string, ToolHandler> = {
       .eq("brand_kit_id", brand_kit_id)
       .maybeSingle();
     if (error) return toolError(`Database error: ${error.message}`, { code: "db_error", retryable: true });
-    return jsonContent(filterFields(normalizeExpressionSlotsForRead(data), ctx.args.fields));
+    return jsonContent(filterFields(withDescribedToneDimensions(normalizeExpressionSlotsForRead(data)), ctx.args.fields));
   },
 
   get_brand_kit_products: async (ctx) => {

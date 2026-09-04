@@ -244,7 +244,7 @@ export const tools = [
   {
     name: "get_brand_kit_expression",
     title: "Get Brand Expression",
-    description: "Get tone of voice, tone dimensions (e.g., formal-casual spectrum), voice archetypes, verbal style, visual style, preferred terminology, and content categories. This is the primary tool for any content creation or review task. Combine with get_brand_kit_governance for complete voice enforcement with guardrails.",
+    description: "Get tone of voice, tone dimensions (each returned with its scale poles and qualitative reading), voice archetypes, verbal style, visual style, preferred terminology, and content categories. This is the global voice; per-platform overrides come from get_platform_expression.",
     inputSchema: {
       type: "object",
       properties: { brand_kit_id: { type: "string", description: "The UUID of the brand kit" }, ...fieldsParam },
@@ -252,6 +252,32 @@ export const tools = [
     },
     annotations: readOnlyAnnotation,
   },
+  {
+    name: "get_platform_expression",
+    title: "Get Platform Expression",
+    description: "Get the brand's expression for one platform, with that platform's overrides already merged over the global voice. Also reports which fields were overridden and their base values. Overrides are configured per social profile in the app.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit" },
+        platform: { type: "string", description: "Platform slug, e.g. linkedin, instagram, facebook, tiktok, youtube, reddit." },
+      },
+      required: ["brand_kit_id", "platform"]
+    },
+    annotations: readOnlyAnnotation,
+  },
+  {
+    name: "list_platform_expressions",
+    title: "List Platform Expressions",
+    description: "Lists which platforms have expression overrides configured for a brand kit and which fields each one touches.",
+    inputSchema: {
+      type: "object",
+      properties: { brand_kit_id: { type: "string", description: "The UUID of the brand kit" } },
+      required: ["brand_kit_id"]
+    },
+    annotations: readOnlyAnnotation,
+  },
+
   {
     name: "get_brand_kit_products",
     title: "Get Brand Products",
@@ -792,6 +818,7 @@ export const tools = [
       properties: {
         persona_id: { type: "string", description: "The UUID of the audience persona to update." },
         brand_kit_id: { type: "string", description: "The UUID of the brand kit (for access verification)." },
+        audience_kind: { type: "string", enum: ["person", "company"], description: "'person' = individual buyer persona, 'company' = company ICP. Only send this to correct a mis-classified persona." },
         persona_name: { type: "string" },
         persona_title: { type: "string" },
         persona_type: { type: "string", enum: ["b2b", "b2c"] },
@@ -836,14 +863,19 @@ export const tools = [
   {
     name: "create_audience_persona",
     title: "Create Target Audience Persona",
-    description: WRITE_GOVERNANCE_PREFIX + "Manually create a new target audience persona (no AI generation). persona_name and persona_type are required; all other fields are optional. The `description` field is a short persona summary (up to 500 chars) shown on the persona card. To AI-generate one instead, use generate_audience_persona. Requires an API key with the 'brand_kit:write' scope.",
+    description: WRITE_GOVERNANCE_PREFIX + "Manually create a new target audience persona (no AI generation). persona_name and audience_kind are required. Set audience_kind: 'person' for an individual buyer persona (a human being — demographics, goals, fears) and audience_kind: 'company' for a company ICP (an organization you sell to — company size, type, industry). persona_type ('b2b' | 'b2c') describes the selling motion and defaults to 'b2b' for company ICPs. For a full company ICP with firmographic fields, use create_company_profile instead. The `description` field is a short persona summary (up to 500 chars) shown on the persona card. To AI-generate one instead, use generate_audience_persona. Requires an API key with the 'brand_kit:write' scope.",
     inputSchema: {
       type: "object",
       properties: {
         brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
-        persona_name: { type: "string", description: "Name for the audience persona (e.g. 'Marketing Mary')." },
+        persona_name: { type: "string", description: "Name for the audience persona (e.g. 'Marketing Mary' for a person, 'Mid-market SaaS' for a company ICP)." },
+        audience_kind: {
+          type: "string",
+          enum: ["person", "company"],
+          description: "'person' = an individual buyer persona. 'company' = a company ICP (an organization). Required so person personas and company ICPs are never mixed up.",
+        },
         persona_title: { type: "string" },
-        persona_type: { type: "string", enum: ["b2b", "b2c"] },
+        persona_type: { type: "string", enum: ["b2b", "b2c"], description: "Selling motion. Optional: defaults to 'b2b' when audience_kind is 'company'." },
         is_primary: { type: "boolean", description: "Whether this is the primary persona for the brand kit. Default false." },
         description: { type: "string", description: "Short persona summary shown on the persona card, up to 500 characters." },
         demographics: DEMOGRAPHICS_SCHEMA,
@@ -878,7 +910,7 @@ export const tools = [
         source: { type: "string", description: "How this persona was created. Default: 'manual'." },
         ...dryRunParam, ...confirmParam,
       },
-      required: ["brand_kit_id", "persona_name", "persona_type"]
+      required: ["brand_kit_id", "persona_name", "audience_kind"]
     },
     annotations: writeAnnotation,
   },
@@ -1008,7 +1040,8 @@ export const tools = [
   },
   {
     name: "generate_audience_persona",
-    title: "Generate Target Audience Persona",
+    title: "Generate Audience Persona (Deprecated, Writes Immediately)",
+
     description: GENERATE_PREFIX + "DEPRECATED: This tool writes immediately with no preview step and will be removed in a future release. Use preview_generate_audience_persona to review the proposed persona first, then create_audience_persona to save it. Existing integrations will continue to work until the deprecation window closes. (Legacy behavior: AI-generates a target audience persona using brand context and saves it. Costs 1 token. Requires an API key with the 'brand_kit:write' scope.)",
     inputSchema: {
       type: "object",
@@ -1888,6 +1921,133 @@ export const tools = [
       required: ["brand_kit_id"],
     },
     annotations: readOnlyAnnotation,
+  },
+  {
+    name: "scrape_brand_kit_website",
+    title: "Scrape Brand Website",
+    description: WRITE_GOVERNANCE_PREFIX + "Scrape the brand's own website and store the raw result against the brand kit — the same scrape the app's 'Extract from URL' flow runs. This stored scrape is the input that detect_brand_kit_customers and detect_target_audiences read, so run it first when either reports 'no_website_scrape'. Charges 1 credit. Two-step: call with dry_run: true to show the URL and cost, then again with confirm: true (omit dry_run). Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:core') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit the scrape is stored against." },
+        url: { type: "string", description: "Public website URL to scrape, e.g. 'https://www.example.com'." },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["brand_kit_id", "url"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
+    name: "detect_target_audiences",
+    title: "Detect Target Audiences",
+    description: GENERATE_PREFIX + "Propose distinct target audiences for the brand from its stored website scrape and brand kit content — the app's 'Detect audiences' action. Creates nothing: it returns candidates for the user to choose from. Charges 1 credit. Two-step: call with dry_run: true, then confirm: true (omit dry_run). After the user picks, create each persona with create_audience_persona and fill it out with enrich_audience_persona. Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:audience') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        seed_text: { type: "string", description: "Optional hint to steer detection, e.g. 'focus on enterprise buyers'." },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["brand_kit_id"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
+    name: "generate_target_audience",
+    title: "Generate Target Audience Persona (Draft First)",
+    description: GENERATE_PREFIX + "Generate one full target audience persona from the brand kit — the app's 'Generate with AI' action on the Target audience card. By default nothing is saved: show the returned personaDraft to the user and write it with create_audience_persona, or pass persist: true to save it immediately. Charges 1 credit. Two-step: call with dry_run: true, then confirm: true (omit dry_run). Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:audience') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        persona_type: { type: "string", enum: ["b2b", "b2c"], description: "Selling motion. Defaults to 'b2b'." },
+        inputs: { type: "object", description: "Optional seed values, e.g. { persona_name: 'Ops Olivia', description: 'Runs fulfilment for a mid-market DTC brand' }." },
+        persist: { type: "boolean", description: "Save the persona immediately instead of returning a draft. Defaults to false." },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["brand_kit_id"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
+    name: "enrich_audience_persona",
+    title: "Enrich Target Audience Persona",
+    description: GENERATE_PREFIX + "Fill out an existing target audience persona section by section (demographics, psychographics, behavior, product fit, triggers) — the app's 'Enrich with AI' action. mode 'initial' fills everything; mode 'augment' only fills empty fields, which is what you want after a partial run. The response reports `partial`, `failedSections`, `sectionsCompleted` and `sectionsTotal`, so a run that times out on some sections is visible instead of silent. Charges 1 credit. Two-step: call with dry_run: true, then confirm: true (omit dry_run). Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:audience') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        persona_id: { type: "string", description: "The UUID of the persona from get_brand_kit_audience." },
+        mode: { type: "string", enum: ["initial", "augment"], description: "'initial' rewrites every section; 'augment' fills only empty fields. Defaults to 'initial'." },
+        seed_text: { type: "string", description: "Optional extra context for the enrichment prompt." },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["brand_kit_id", "persona_id"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
+    name: "detect_brand_kit_customers",
+    title: "Detect Current Customers",
+    description: GENERATE_PREFIX + "Read the brand kit's stored website scrape and propose current-customer company profiles (logo walls, case studies, testimonials) — the app's 'Find from my website' action. Saves the candidates by default; pass persist: false to preview them only. When no scrape is stored the response carries reason: 'no_website_scrape' — run scrape_brand_kit_website first. Charges 1 credit. Two-step: call with dry_run: true, then confirm: true (omit dry_run). Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:audience') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        persist: { type: "boolean", description: "Save the detected customers. Defaults to true; pass false for a candidate list only." },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["brand_kit_id"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
+    name: "scrape_customer_profile",
+    title: "Scrape Customer Company Profile",
+    description: WRITE_GOVERNANCE_PREFIX + "Scrape a company's public website and save it as a current customer (or an ideal company profile) — the app's 'Add from URL' action on the Current customers card. Returns the saved profile; follow with enrich_company_profile to fill the remaining firmographic fields. Charges 1 credit. Two-step: call with dry_run: true, then confirm: true (omit dry_run). Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:audience') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        url: { type: "string", description: "The company's public website URL." },
+        profile_kind: { type: "string", enum: ["customer", "company_icp"], description: "'customer' for a real existing customer, 'company_icp' for an ideal-profile archetype. Defaults to 'customer'." },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["brand_kit_id", "url"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
+    name: "enrich_company_profile",
+    title: "Enrich Company Profile",
+    description: GENERATE_PREFIX + "AI-fill an existing current customer or ideal company profile (category, business model, size, positioning, buying triggers, objections) — the app's 'Enrich with AI' action on a company card. mode 'augment' fills only empty fields; 'initial' rewrites the profile. Charges 1 credit. Two-step: call with dry_run: true, then confirm: true (omit dry_run). Read the result with get_brand_kit_customers or get_brand_kit_company_icps. Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:audience') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        profile_id: { type: "string", description: "The UUID from get_brand_kit_customers or get_brand_kit_company_icps." },
+        mode: { type: "string", enum: ["initial", "augment"], description: "'augment' fills only empty fields (default), 'initial' rewrites the profile." },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["brand_kit_id", "profile_id"],
+    },
+    annotations: writeAnnotation,
+  },
+  {
+    name: "generate_company_icp",
+    title: "Generate Ideal Company Profiles",
+    description: GENERATE_PREFIX + "Generate ideal company profile archetypes from the brand kit, its current customers and its personas — the app's 'Generate ICPs' action. Pass preview: true to return proposals without saving them. Charges 1 credit. Two-step: call with dry_run: true, then confirm: true (omit dry_run). Requires an API key with the 'brand_kit:write' (or 'brand_kit:write:audience') scope.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        brand_kit_id: { type: "string", description: "The UUID of the brand kit." },
+        count: { type: "number", description: "How many archetypes to generate (1-3). Defaults to 3." },
+        preview: { type: "boolean", description: "Return proposals without saving them. Defaults to false." },
+        ...dryRunParam, ...confirmParam,
+      },
+      required: ["brand_kit_id"],
+    },
+    annotations: writeAnnotation,
   },
 ];
 

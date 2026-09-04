@@ -20,6 +20,7 @@ export function buildBrandKitSectionToolMap(): BrandKitSectionToolMap {
       read: ["get_brand_kit_core"],
       preview: ["preview_brand_kit_core_update"],
       write: ["upsert_brand_kit_core"],
+      generate: ["scrape_brand_kit_website"],
     },
     personality: {
       read: ["get_brand_kit_personality"],
@@ -27,10 +28,11 @@ export function buildBrandKitSectionToolMap(): BrandKitSectionToolMap {
       write: ["upsert_brand_kit_personality"],
     },
     expression: {
-      read: ["get_brand_kit_expression"],
+      read: ["get_brand_kit_expression", "get_platform_expression", "list_platform_expressions"],
       preview: ["preview_brand_kit_expression_update"],
       write: ["upsert_brand_kit_expression"],
     },
+
     governance: {
       read: ["get_brand_kit_governance", "list_compliance_standards", "get_disclosure_diligence_questions"],
       preview: ["preview_brand_kit_governance_update"],
@@ -45,16 +47,18 @@ export function buildBrandKitSectionToolMap(): BrandKitSectionToolMap {
       read: ["get_brand_kit_audience", "list_persona_field_options"],
       preview: ["preview_generate_audience_persona"],
       write: ["create_audience_persona", "update_audience_persona", "delete_audience_persona"],
-      generate: ["generate_audience_persona"],
+      generate: ["generate_audience_persona", "generate_target_audience", "detect_target_audiences", "enrich_audience_persona"],
     },
 
     customers: {
       read: ["get_brand_kit_customers"],
       write: ["create_customer_profile", "update_customer_profile", "delete_customer_profile"],
+      generate: ["detect_brand_kit_customers", "scrape_customer_profile", "enrich_company_profile"],
     },
     company_icps: {
       read: ["get_brand_kit_company_icps"],
       write: ["create_company_icp", "update_company_icp", "delete_company_icp"],
+      generate: ["generate_company_icp", "enrich_company_profile"],
     },
     personas: {
       read: ["list_brand_kit_personas", "get_brand_kit_personas", "get_persona_system_prompt"],
