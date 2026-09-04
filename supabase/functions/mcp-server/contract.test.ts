@@ -1223,7 +1223,7 @@ function createDryRunWriteSupabase() {
 Deno.test("create_audience_persona carries source: ai_generated through to the insert payload", async () => {
   const result = await executeTool(
     "create_audience_persona",
-    { brand_kit_id: "550e8400-e29b-41d4-a716-446655440000", persona_name: "Solo Creator Sarah", persona_type: "b2c", source: "ai_generated", dry_run: true },
+    { brand_kit_id: "550e8400-e29b-41d4-a716-446655440000", persona_name: "Solo Creator Sarah", persona_type: "b2c", audience_kind: "person", source: "ai_generated", dry_run: true },
     "user-1",
     createDryRunWriteSupabase(),
     [MCP_SCOPES.BRAND_KIT_WRITE],

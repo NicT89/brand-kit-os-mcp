@@ -3,11 +3,11 @@
 **Give ChatGPT, Claude, and Cursor structured, governed access to your brand.**
 
 Brand Kit OS MCP is a hosted [Model Context Protocol](https://modelcontextprotocol.io) server
-that exposes **82 tools** for reading and writing your brand voice, audience, personas,
+that exposes **96 tools** for reading and writing your brand voice, audience, personas,
 messaging, governance rules, knowledge files, and visual identity — so AI output stays on-brand,
 every time, across every tool.
 
-- **Server version:** `v1.5.0` · MCP protocol `2024-11-05`
+- **Server version:** `v1.7.0` · MCP protocol `2024-11-05`
 - **Remote endpoint:** `https://www.brandkitos.com/mcp`
 - **Auth:** OAuth 2.0 (recommended) or API key (`Authorization: Bearer bk_...`)
 
@@ -103,7 +103,7 @@ and documented at **https://www.brandkitos.com/mcp-documentation**.
 
 ## Versioning
 
-The server is versioned with `SERVER_VERSION` (currently `v1.5.0`). Client tool caches are
+The server is versioned with `SERVER_VERSION` (currently `v1.7.0`). Client tool caches are
 keyed to it — reconnect (or the version bump) refreshes the tool list. See
 [`CHANGELOG.md`](./CHANGELOG.md). This repository is re-published on every server release.
 
