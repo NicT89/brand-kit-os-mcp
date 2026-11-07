@@ -2,6 +2,9 @@ import type { ToolHandler } from "./types.ts";
 import { ACCESS_DENIED_RECOVERY, toolError } from "../tool-errors.ts";
 import { normalizeGovernanceForRead, toJsonArray } from "../json-helpers.ts";
 import { verifyBrandKitAccess } from "../brand-access.ts";
+import { describeToneDimensions } from "../../_shared/tone-dimensions.ts";
+import { applyPlatformOverrides, fetchPlatformOverrides } from "./platform-expression.ts";
+
 
 export const readContextHandlers: Record<string, ToolHandler> = {
   get_brand_context_for_agent: async (ctx) => {
@@ -119,6 +122,26 @@ export const readContextHandlers: Record<string, ToolHandler> = {
       resolved[key] = data;
     }
 
+    // Platform overrides live on social_profiles.expression_overrides. A caller
+    // that names a platform gets the voice the user configured for it, not the
+    // global voice with platform-shaped filtering applied on top.
+    let platformOverrideInfo: { overridden_fields: string[]; profile_type: string | null } | null = null;
+    if (platformLc && resolved.expression !== undefined) {
+      const { overrides, profileType } = await fetchPlatformOverrides(supabaseAdmin, brand_kit_id, platformLc);
+      if (overrides) {
+        const merged = applyPlatformOverrides(
+          resolved.expression as Record<string, unknown> | null,
+          overrides,
+          platformLc,
+          profileType,
+        );
+        resolved.expression = merged.expression;
+        platformOverrideInfo = { overridden_fields: merged.overridden_fields, profile_type: merged.profile_type };
+      }
+    }
+
+
+
     // Reorder verbal_style slots for platform if provided
     const expression = resolved.expression as Record<string, unknown> | null;
     if (expression && platformLc && expression.verbal_style && typeof expression.verbal_style === "object") {
@@ -165,14 +188,22 @@ export const readContextHandlers: Record<string, ToolHandler> = {
       core?.mission ? `**Mission:** ${core.mission}` : "",
       core?.vision ? `**Vision:** ${core.vision}` : "",
       platformLc ? `**Platform:** ${platformLc}` : "",
+      platformOverrideInfo
+        ? `**Platform voice overrides applied:** ${platformOverrideInfo.overridden_fields.join(", ")}${platformOverrideInfo.profile_type ? ` (from the ${platformOverrideInfo.profile_type} profile)` : ""}`
+        : "",
     ].filter(Boolean);
 
     if (expression) {
       if (expression.tone_of_voice) lines.push(`\n## Tone of Voice\n${JSON.stringify(expression.tone_of_voice)}`);
-      if (expression.tone_dimensions) lines.push(`**Tone Dimensions:** ${JSON.stringify(expression.tone_dimensions)}`);
+      if (expression.tone_dimensions) {
+        const described = describeToneDimensions(expression.tone_dimensions as Record<string, unknown>);
+        const payload = Object.keys(described).length ? described : expression.tone_dimensions;
+        lines.push(`**Tone Dimensions:** ${JSON.stringify(payload)}`);
+      }
       if (expression.verbal_style) lines.push(`**Verbal Style:** ${JSON.stringify(expression.verbal_style)}`);
       if (expression.preferred_terminology) lines.push(`**Preferred Terms:** ${JSON.stringify(expression.preferred_terminology)}`);
     }
+
 
     if (governance) {
       lines.push("\n## Governance Rules");

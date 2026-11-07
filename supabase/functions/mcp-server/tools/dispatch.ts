@@ -16,6 +16,9 @@ import { batchHandlers } from "./batch-handlers.ts";
 import { companyProfileHandlers } from "./company-profile-handlers.ts";
 import { webDiscoveryHandlers } from "./web-discovery-handlers.ts";
 import { socialHandlers } from "./social-handlers.ts";
+import { aiWorkflowHandlers } from "./ai-workflow-handlers.ts";
+import { platformExpressionHandlers } from "./platform-expression-handlers.ts";
+
 
 const ALL_HANDLERS: Record<string, ToolHandler> = {
   ...sectionReadHandlers,
@@ -35,7 +38,10 @@ const ALL_HANDLERS: Record<string, ToolHandler> = {
   ...companyProfileHandlers,
   ...webDiscoveryHandlers,
   ...socialHandlers,
+  ...aiWorkflowHandlers,
+  ...platformExpressionHandlers,
 };
+
 
 export async function dispatchTool(
   toolName: string,

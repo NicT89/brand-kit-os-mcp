@@ -87,20 +87,16 @@ export async function assertBrandKitMcpWriteAllowed(
 }
 
 /**
- * Per-user "require explicit confirmation on MCP writes" gate.
+ * "Require explicit confirmation on MCP writes" gate.
  *
- * Returns null if the write is allowed to proceed, or a toolError result if
- * the user has the toggle on AND the call is not a dry_run AND `confirm: true`
- * was not supplied. Dry-run previews are always allowed.
+ * Precedence, highest first:
+ *   1. `brand_kit_members.require_mcp_write_confirmation` for this member on
+ *      this kit — set by the kit owner. Members cannot change it themselves.
+ *   2. `profiles.require_mcp_write_confirmation` — the member's account default,
+ *      and the only value that applies to a kit the caller owns.
  *
- * Behavior summary:
- *   - require_mcp_write_confirmation = false → no-op (opt-out; the user turned
- *     the toggle off in Settings → Preferences → Agent writes).
- *   - require_mcp_write_confirmation = true → the default since the column
- *     default was flipped and existing rows were backfilled:
- *       • args.dry_run === true            → allow (preview)
- *       • args.confirm === true            → allow (commit)
- *       • otherwise                        → confirmation_required error
+ * Returns null when the write may proceed, or a toolError when confirmation is
+ * required and neither `dry_run: true` (preview) nor `confirm: true` was sent.
  */
 export async function assertMcpWriteConfirmation(
   args: Record<string, unknown>,
@@ -110,20 +106,45 @@ export async function assertMcpWriteConfirmation(
   if (args?.dry_run === true) return null;
   if (args?.confirm === true) return null;
 
-  const { data: profile } = await supabaseAdmin
-    .from("profiles")
-    .select("require_mcp_write_confirmation")
-    .eq("id", userId)
-    .maybeSingle();
+  let required: boolean | null = null;
+  let setBy: "brand_kit" | "account" = "account";
 
-  if (!profile?.require_mcp_write_confirmation) return null;
+  const brandKitId = typeof args?.brand_kit_id === "string" ? args.brand_kit_id : null;
+  if (brandKitId) {
+    const { data: member } = await supabaseAdmin
+      .from("brand_kit_members")
+      .select("require_mcp_write_confirmation")
+      .eq("brand_kit_id", brandKitId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (member && member.require_mcp_write_confirmation !== null) {
+      required = member.require_mcp_write_confirmation === true;
+      setBy = "brand_kit";
+    }
+  }
+
+  if (required === null) {
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("require_mcp_write_confirmation")
+      .eq("id", userId)
+      .maybeSingle();
+    required = profile?.require_mcp_write_confirmation === true;
+  }
+
+  if (!required) return null;
 
   return toolError(
-    "Your account requires MCP writes to be explicitly confirmed.",
+    setBy === "brand_kit"
+      ? "This brand kit's owner requires MCP writes to be explicitly confirmed."
+      : "Your account requires MCP writes to be explicitly confirmed.",
     {
       code: "confirmation_required",
       recovery:
-        "Re-call this tool with `confirm: true` (and without `dry_run`) after reviewing the dry_run preview. You can disable this requirement in Settings → Preferences → Agent writes → 'Require confirmation on MCP writes'.",
+        setBy === "brand_kit"
+          ? "Re-call this tool with `confirm: true` (and without `dry_run`) after reviewing the dry_run preview. Only the brand kit's owner can change this requirement, under Share → member settings."
+          : "Re-call this tool with `confirm: true` (and without `dry_run`) after reviewing the dry_run preview. You can change this under Settings → Preferences → Agent writes.",
+      data: { set_by: setBy },
     },
   );
 }

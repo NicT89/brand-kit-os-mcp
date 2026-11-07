@@ -199,7 +199,7 @@ export const mutateHandlers: Record<string, ToolHandler> = {
           const { data: existing } = await supabaseAdmin.from('brand_kit_target_audience').select('*').eq('id', persona_id).eq('brand_kit_id', brand_kit_id).maybeSingle();
           if (!existing) return toolError("Audience persona not found or does not belong to this brand kit", { code: "not_found", recovery: "Verify persona_id with get_brand_kit_audience for this brand kit." });
 
-          const allowed = ['persona_name','persona_title','persona_type','is_primary','description','demographics','professional_context','personal_background','goals_motivations','frustrations_pain_points','values_beliefs','fears','information_sources','preferred_channels','core_motivation','expertise_level','buying_behavior','content_that_resonates','representative_quote','barriers_to_sale','objections_verbatim','trigger_events','product_fit','current_perception','platform_behavior','tech_usage','influencers','aspirational_identity','show_dont_tell_scene','visual_identifiers','funnel_stage_triggers','channel_behavior_matrix','paid_tools','source'];
+          const allowed = ['persona_name','persona_title','persona_type','audience_kind','is_primary','description','demographics','professional_context','personal_background','goals_motivations','frustrations_pain_points','values_beliefs','fears','information_sources','preferred_channels','core_motivation','expertise_level','buying_behavior','content_that_resonates','representative_quote','barriers_to_sale','objections_verbatim','trigger_events','product_fit','current_perception','platform_behavior','tech_usage','influencers','aspirational_identity','show_dont_tell_scene','visual_identifiers','funnel_stage_triggers','channel_behavior_matrix','paid_tools','source'];
           let updateData: Record<string, any> = {};
           for (const key of allowed) {
             if (fields[key] !== undefined) updateData[key] = fields[key];
@@ -643,8 +643,28 @@ export const mutateHandlers: Record<string, ToolHandler> = {
           if (scopeDeniedAudienceCreate) return scopeDeniedAudienceCreate;
           const { brand_kit_id, dry_run, ...fields } = args;
           if (!brand_kit_id) return toolError("brand_kit_id is required", { code: "validation_error" });
-          if (!fields.persona_name || !fields.persona_type) return toolError("persona_name and persona_type are required", { code: "validation_error", recovery: "Provide persona_name and persona_type (e.g. 'b2b' or 'b2c') for the new persona." });
-          await log("info", "Starting create_audience_persona", { brand_kit_id, dry_run: !!dry_run });
+          if (!fields.persona_name) return toolError("persona_name is required", { code: "validation_error", recovery: "Provide persona_name for the new persona." });
+          // Person persona vs company ICP is an explicit choice, never a guess:
+          // the two describe different things and were previously conflated.
+          const audienceKind = fields.audience_kind;
+          if (audienceKind !== 'person' && audienceKind !== 'company') {
+            return toolError("audience_kind is required and must be 'person' or 'company'.", {
+              code: "validation_error",
+              recovery:
+                "Use audience_kind: 'person' for an individual buyer persona (a human — demographics, goals, fears), or audience_kind: 'company' for a company ICP (an organization — size, type, industry). For a full firmographic company ICP, call create_company_profile instead.",
+            });
+          }
+          if (fields.persona_type === undefined) {
+            // A company ICP is a B2B motion by definition; a person persona must say.
+            if (audienceKind === 'company') fields.persona_type = 'b2b';
+            else {
+              return toolError("persona_type is required for a person persona.", {
+                code: "validation_error",
+                recovery: "Pass persona_type: 'b2b' or 'b2c' to say which selling motion this person belongs to.",
+              });
+            }
+          }
+          await log("info", "Starting create_audience_persona", { brand_kit_id, dry_run: !!dry_run, audience_kind: audienceKind });
           const hasAccess = await verifyBrandKitAccess(brand_kit_id, userId, supabaseAdmin);
           if (!hasAccess) return toolError("Access denied to this brand kit", { code: "access_denied", recovery: ACCESS_DENIED_RECOVERY });
           const mcpWriteGate = await assertBrandKitMcpWriteAllowed(brand_kit_id, userId, supabaseAdmin);
@@ -652,7 +672,7 @@ export const mutateHandlers: Record<string, ToolHandler> = {
           const confirmGate = await assertMcpWriteConfirmation(args, userId, supabaseAdmin);
           if (confirmGate) return confirmGate;
 
-          const allowed = ['persona_name','persona_title','persona_type','is_primary','description','demographics','professional_context','personal_background','goals_motivations','frustrations_pain_points','values_beliefs','fears','information_sources','preferred_channels','core_motivation','expertise_level','buying_behavior','content_that_resonates','representative_quote','barriers_to_sale','objections_verbatim','trigger_events','product_fit','current_perception','platform_behavior','tech_usage','influencers','aspirational_identity','show_dont_tell_scene','visual_identifiers','funnel_stage_triggers','channel_behavior_matrix','paid_tools','source'];
+          const allowed = ['persona_name','persona_title','persona_type','audience_kind','is_primary','description','demographics','professional_context','personal_background','goals_motivations','frustrations_pain_points','values_beliefs','fears','information_sources','preferred_channels','core_motivation','expertise_level','buying_behavior','content_that_resonates','representative_quote','barriers_to_sale','objections_verbatim','trigger_events','product_fit','current_perception','platform_behavior','tech_usage','influencers','aspirational_identity','show_dont_tell_scene','visual_identifiers','funnel_stage_triggers','channel_behavior_matrix','paid_tools','source'];
           let insertPayload: Record<string, any> = { brand_kit_id };
           for (const key of allowed) {
             if (fields[key] !== undefined) insertPayload[key] = fields[key];

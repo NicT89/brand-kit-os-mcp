@@ -4,11 +4,17 @@ import { MCP_SCOPES } from "../_shared/mcp-scopes.ts";
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, mcp-session-id",
-  "Access-Control-Expose-Headers": "mcp-session-id",
+  // WWW-Authenticate must be exposed explicitly: it is not a CORS-safelisted
+  // response header, so without this a browser fetch() reads null even though
+  // the header is on the wire. That hides the RFC 9728 resource_metadata
+  // pointer in our 401 challenge from any browser-based client doing OAuth
+  // discovery — and from the /mcp-documentation status page, which reported
+  // "401 returned but no resource_metadata" while curl saw the header fine.
+  "Access-Control-Expose-Headers": "mcp-session-id, WWW-Authenticate",
 };
 
 export const PROTOCOL_VERSION = "2024-11-05";
-export const SERVER_VERSION = "1.5.0";
+export const SERVER_VERSION = "1.7.0";
 
 export const AI_GATEWAY_TIMEOUT_MS = 60_000;
 export const TOOL_CALL_TIMEOUT_MS = 90_000;
